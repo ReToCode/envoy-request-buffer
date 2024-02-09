@@ -1,0 +1,35 @@
+---
+version: '2.2'
+services:
+  envoy:
+    image: envoyproxy/envoy:v1.29-latest
+    depends_on:
+      - upstream
+    command:
+      - /usr/local/bin/envoy
+      - --config-path
+      - /etc/envoy.yaml
+      - --log-level
+      - info
+      - --component-log-level
+      - wasm:debug,http:debug,router:debug
+      - --service-cluster
+      - proxy
+    expose:
+      - "8001" # admin
+      - "9001" # http proxy
+      - "9002" # grpc proxy
+    ports:
+      - "8001:8001" # admin
+      - "9001:9001" # http proxy
+      - "9002:9002" # grpc proxy
+    volumes:
+      - ./envoy/envoy.yaml:/etc/envoy.yaml
+      - ./target/request_buffer.wasm:/opt/wasm/request_buffer.wasm
+  upstream:
+    build:
+      dockerfile: upstream/Containerfile
+      context: .
+    ports:
+      - "50001:50001" # http
+      - "50002:50002" # grpc
