@@ -5,17 +5,21 @@ import (
 	"github.com/tetratelabs/proxy-wasm-go-sdk/proxywasm/types"
 )
 
-type NetworkContext struct {
+type networkContext struct {
 	types.DefaultTcpContext
+	pluginCtx *pluginContext
 }
 
-func (ctx *NetworkContext) OnNewConnection() types.Action {
+func (ctx *networkContext) OnNewConnection() types.Action {
 	proxywasm.LogInfo("new connection!")
+
+	configuration, _ := proxywasm.GetVMConfiguration()
+	proxywasm.LogInfof("vmconfig: %v", configuration)
 
 	return types.ActionContinue
 }
 
-func (ctx *NetworkContext) OnDownstreamData(dataSize int, endOfStream bool) types.Action {
+func (ctx *networkContext) OnDownstreamData(dataSize int, endOfStream bool) types.Action {
 	if dataSize == 0 {
 		return types.ActionContinue
 	}
@@ -24,12 +28,12 @@ func (ctx *NetworkContext) OnDownstreamData(dataSize int, endOfStream bool) type
 	return types.ActionContinue
 }
 
-func (ctx *NetworkContext) OnDownstreamClose(types.PeerType) {
+func (ctx *networkContext) OnDownstreamClose(types.PeerType) {
 	proxywasm.LogInfo("downstream connection close!")
 	return
 }
 
-func (ctx *NetworkContext) OnUpstreamData(dataSize int, endOfStream bool) types.Action {
+func (ctx *networkContext) OnUpstreamData(dataSize int, endOfStream bool) types.Action {
 	if dataSize == 0 {
 		return types.ActionContinue
 	}
@@ -44,6 +48,6 @@ func (ctx *NetworkContext) OnUpstreamData(dataSize int, endOfStream bool) types.
 	return types.ActionContinue
 }
 
-func (ctx *NetworkContext) OnStreamDone() {
+func (ctx *networkContext) OnStreamDone() {
 	proxywasm.LogInfo("connection complete!")
 }
