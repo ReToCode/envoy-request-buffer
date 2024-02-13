@@ -1,51 +1,53 @@
 static_resources:
   listeners:
 
-    - name: http
+    - name: main
       address:
         socket_address:
           address: 0.0.0.0
-          port_value: 9001
+          port_value: 9000
+
       filter_chains:
         - filters:
-            - name: envoy.filters.network.wasm
-              typed_config:
-                "@type": type.googleapis.com/envoy.extensions.filters.network.wasm.v3.Wasm
-                config:
-                  vm_config:
-                    runtime: "envoy.wasm.runtime.v8"
-                    code:
-                      local:
-                        filename: "/opt/wasm/request_buffer.wasm"
-
-            - name: envoy.tcp_proxy
-              typed_config:
-                "@type": type.googleapis.com/envoy.extensions.filters.network.tcp_proxy.v3.TcpProxy
-                stat_prefix: ingress
-                cluster: http-service
-
-    - name: grpc
-      address:
-        socket_address:
-          address: 0.0.0.0
-          port_value: 9002
-      filter_chains:
-        - filters:
-            - name: envoy.filters.network.wasm
-              typed_config:
-                "@type": type.googleapis.com/envoy.extensions.filters.network.wasm.v3.Wasm
-                config:
-                  vm_config:
-                    runtime: "envoy.wasm.runtime.v8"
-                    code:
-                      local:
-                        filename: "/opt/wasm/request_buffer.wasm"
-
-            - name: envoy.tcp_proxy
-              typed_config:
-                "@type": type.googleapis.com/envoy.extensions.filters.network.tcp_proxy.v3.TcpProxy
-                stat_prefix: ingress
-                cluster: grpc-service
+          - name: envoy.http_connection_manager
+            typed_config:
+              "@type": type.googleapis.com/envoy.extensions.filters.network.http_connection_manager.v3.HttpConnectionManager
+              stat_prefix: ingress_http
+              codec_type: auto
+              route_config:
+                name: main
+                virtual_hosts:
+                  - name: http
+                    domains:
+                      - "http.example.com"
+                    routes:
+                      - match:
+                          prefix: "/"
+                        route:
+                          cluster: http-service
+                  - name: grpc
+                    domains:
+                      - "grpc.example.com"
+                    routes:
+                      - match:
+                          prefix: "/"
+                        route:
+                          cluster: grpc-service
+              http_filters:
+                - name: envoy.filters.http.wasm
+                  typed_config:
+                    "@type": type.googleapis.com/udpa.type.v1.TypedStruct
+                    type_url: type.googleapis.com/envoy.extensions.filters.http.wasm.v3.Wasm
+                    value:
+                      config:
+                        vm_config:
+                          runtime: "envoy.wasm.runtime.v8"
+                          code:
+                            local:
+                              filename: "/opt/wasm/request_buffer.wasm"
+                - name: envoy.filters.http.router
+                  typed_config:
+                    "@type": type.googleapis.com/envoy.extensions.filters.http.router.v3.Router
 
   clusters:
     - name: http-service
@@ -75,6 +77,20 @@ static_resources:
                     socket_address:
                       address: upstream
                       port_value: 50002
+
+    - name: control-plane
+      type: STRICT_DNS
+      lb_policy: ROUND_ROBIN
+      load_assignment:
+        cluster_name: control-plane
+        endpoints:
+          - lb_endpoints:
+              - endpoint:
+                  address:
+                    socket_address:
+                      address: control-plane
+                      port_value: 7001
+
 
 admin:
   access_log_path: "/dev/null"

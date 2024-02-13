@@ -5,49 +5,27 @@ import (
 	"github.com/tetratelabs/proxy-wasm-go-sdk/proxywasm/types"
 )
 
-type networkContext struct {
-	types.DefaultTcpContext
+const authorityKey = ":authority"
+
+type httpContext struct {
+	types.DefaultHttpContext
 	pluginCtx *pluginContext
+	contextID uint32
 }
 
-func (ctx *networkContext) OnNewConnection() types.Action {
-	proxywasm.LogInfo("new connection!")
-
-	configuration, _ := proxywasm.GetVMConfiguration()
-	proxywasm.LogInfof("vmconfig: %v", configuration)
-
-	return types.ActionContinue
-}
-
-func (ctx *networkContext) OnDownstreamData(dataSize int, endOfStream bool) types.Action {
-	if dataSize == 0 {
-		return types.ActionContinue
-	}
-
-	proxywasm.LogInfof(">>>>>> downstream data received >>>>>>\n")
-	return types.ActionContinue
-}
-
-func (ctx *networkContext) OnDownstreamClose(types.PeerType) {
-	proxywasm.LogInfo("downstream connection close!")
-	return
-}
-
-func (ctx *networkContext) OnUpstreamData(dataSize int, endOfStream bool) types.Action {
-	if dataSize == 0 {
-		return types.ActionContinue
-	}
-
-	// Get the remote ip address of the upstream cluster.
-	address, err := proxywasm.GetProperty([]string{"upstream", "address"})
+func (ctx *httpContext) OnHttpRequestHeaders(numHeaders int, endOfStream bool) types.Action {
+	authority, err := proxywasm.GetHttpRequestHeader(authorityKey)
 	if err != nil {
-		proxywasm.LogWarnf("failed to get upstream remote address: %v", err)
+		proxywasm.LogCritical("failed to get request header: ':authority'")
+		return types.ActionPause
 	}
 
-	proxywasm.LogInfof("<<<<<< upstream data received from: %s <<<<<<\n", string(address))
-	return types.ActionContinue
-}
+	if pendingRequests, has := ctx.pluginCtx.scaledToZeroClusters[authority]; has {
+		proxywasm.LogInfof("Http request to %s are paused, ctxId: %d", authority, ctx.contextID)
+		ctx.pluginCtx.scaledToZeroClusters[authority] = append(pendingRequests, ctx.contextID)
+		return types.ActionPause
+	}
 
-func (ctx *networkContext) OnStreamDone() {
-	proxywasm.LogInfo("connection complete!")
+	proxywasm.LogInfof("Service is scaled up, directly forwarding http request to %s", authority)
+	return types.ActionContinue
 }

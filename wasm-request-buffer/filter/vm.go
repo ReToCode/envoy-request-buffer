@@ -10,7 +10,7 @@ type VmContext struct {
 
 func (*VmContext) NewPluginContext(contextID uint32) types.PluginContext {
 	return &pluginContext{
-		contextID:      contextID,
-		pausedClusters: make(map[string]struct{}),
+		contextID:            contextID,
+		scaledToZeroClusters: make(map[string][]uint32),
 	}
 }

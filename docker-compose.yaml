@@ -5,6 +5,7 @@ services:
     image: envoyproxy/envoy:v1.29-latest
     depends_on:
       - upstream
+      - control-plane
     command:
       - /usr/local/bin/envoy
       - --config-path
@@ -12,20 +13,24 @@ services:
       - --log-level
       - info
       - --component-log-level
-      - wasm:debug,http:debug,router:debug
+      - wasm:debug
       - --service-cluster
       - proxy
     expose:
       - "8001" # admin
-      - "9001" # http proxy
-      - "9002" # grpc proxy
+      - "9000" # traffic
     ports:
       - "8001:8001" # admin
-      - "9001:9001" # http proxy
-      - "9002:9002" # grpc proxy
+      - "9000:9000" # traffic
     volumes:
       - ./envoy/envoy.yaml:/etc/envoy.yaml
       - ./target/request_buffer.wasm:/opt/wasm/request_buffer.wasm
+  control-plane:
+    build:
+      dockerfile: control-plane/Containerfile
+      context: .
+    ports:
+      - "7001:7001"
   upstream:
     build:
       dockerfile: upstream/Containerfile

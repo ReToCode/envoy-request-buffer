@@ -13,7 +13,7 @@ var scaledToZeroClusters = make(map[string]struct{})
 const httpPort = 7001
 
 func main() {
-	http.HandleFunc("/scaled-to-zero-clusters", getScaledToZeroClusters)
+	http.HandleFunc("/", getScaledToZeroClusters)
 	http.HandleFunc("/set-scaled-to-zero", setScaledToZero)
 	srv := &http.Server{
 		Addr:         ":" + strconv.Itoa(httpPort),
@@ -66,7 +66,6 @@ func getScaledToZeroClusters(w http.ResponseWriter, r *http.Request) {
 		log.Println("failed to marshal scaledToZeroClusters, err: ", err)
 		w.WriteHeader(http.StatusInternalServerError)
 	}
-	log.Printf("getScaledToZeroClusters called, returning: %s\n", jsonStr)
 	_, err = w.Write(jsonStr)
 	if err != nil {
 		log.Printf("failed to write to output stream, err: %v\n", err)
