@@ -49,7 +49,7 @@ func setScaledToZero(w http.ResponseWriter, r *http.Request) {
 		log.Printf("Removing %s from scaledToZeroClusters\n", hostname)
 		delete(scaledToZeroClusters, hostname)
 	} else {
-		log.Printf("Adding %s from scaledToZeroClusters\n", hostname)
+		log.Printf("Adding %s to scaledToZeroClusters\n", hostname)
 		scaledToZeroClusters[hostname] = struct{}{}
 	}
 

@@ -1,3 +1,16 @@
+bootstrap_extensions:
+  - name: envoy.bootstrap.wasm
+    typed_config:
+      "@type": type.googleapis.com/envoy.extensions.wasm.v3.WasmService
+      singleton: true
+      config:
+        vm_config:
+          vm_id: "request-buffer"
+          runtime: "envoy.wasm.runtime.v8"
+          code:
+            local:
+              filename: "/opt/wasm/request_buffer_service.wasm"
+
 static_resources:
   listeners:
 
@@ -41,10 +54,11 @@ static_resources:
                     value:
                       config:
                         vm_config:
+                          vm_id: "request-buffer"
                           runtime: "envoy.wasm.runtime.v8"
                           code:
                             local:
-                              filename: "/opt/wasm/request_buffer.wasm"
+                              filename: "/opt/wasm/request_buffer_filter.wasm"
                 - name: envoy.filters.http.router
                   typed_config:
                     "@type": type.googleapis.com/envoy.extensions.filters.http.router.v3.Router

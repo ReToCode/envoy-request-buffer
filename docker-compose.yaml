@@ -24,7 +24,7 @@ services:
       - "9000:9000" # traffic
     volumes:
       - ./envoy/envoy.yaml:/etc/envoy.yaml
-      - ./target/request_buffer.wasm:/opt/wasm/request_buffer.wasm
+      - ./target/:/opt/wasm/
   control-plane:
     build:
       dockerfile: control-plane/Containerfile
