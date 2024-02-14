@@ -74,11 +74,13 @@ func (ctx *filterPluginContext) OnTick() {
 				err := proxywasm.SetEffectiveContext(httpCtx)
 				if err != nil {
 					proxywasm.LogCriticalf("failed to set http context: %v", err)
+					// TODO: when the client closes the connection, this is allowed to fail
 					return
 				}
 				err = proxywasm.ResumeHttpRequest()
 				if err != nil {
 					proxywasm.LogCriticalf("failed to resume request: %v", err)
+					// TODO: when the client closes the connection, this is allowed to fail
 					return
 				}
 			}
