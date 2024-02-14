@@ -92,4 +92,4 @@ grpcurl -plaintext -authority grpc.example.com localhost:9000 grpc.health.v1.Hea
 - [ ] Test data architecture (how many request context can be held, how does envoy scale the HTTP contexts)?
 - [ ] Make it work with Envoy Gateway-API integration
 - [ ] Make it work on K8s, get the scaled-to-zero status from K8s
-- [ ] Poke the control-plane to scale on requests when scaled to zero
+- [ ] Poke the control-plane to actually scale on requests when scaled to zero

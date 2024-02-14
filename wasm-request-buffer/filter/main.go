@@ -10,20 +10,22 @@ import (
 
 const authorityKey = ":authority"
 
+const tickMilliseconds uint32 = 1000 * 1 // every second
+
 type filterVmContext struct {
 	types.DefaultVMContext
 }
 
 type filterPluginContext struct {
 	types.DefaultPluginContext
-	contextID uint32
+	contextID                uint32
+	pausedRequestsForCluster map[string][]uint32 // [authority][[]httpContextIDs]
 }
 
 type httpContext struct {
 	types.DefaultHttpContext
-	pluginCtx          *filterPluginContext
-	httpContextID      uint32
-	httpContextQueueID uint32
+	pluginCtx     *filterPluginContext
+	httpContextID uint32
 }
 
 func main() {
@@ -32,20 +34,58 @@ func main() {
 
 func (*filterVmContext) NewPluginContext(contextID uint32) types.PluginContext {
 	return &filterPluginContext{
-		contextID: contextID,
+		contextID:                contextID,
+		pausedRequestsForCluster: make(map[string][]uint32),
 	}
 }
 
-func (ctx *filterPluginContext) NewHttpContext(contextID uint32) types.HttpContext {
-	httpContextQueueID, err := proxywasm.ResolveSharedQueue(shared.VMID, shared.HTTPContextQueueName)
-	if err != nil {
-		proxywasm.LogCriticalf("error resolving queue id: %v", err)
+func (ctx *filterPluginContext) OnPluginStart(pluginConfigurationSize int) types.OnPluginStartStatus {
+	if err := proxywasm.SetTickPeriodMilliSeconds(tickMilliseconds); err != nil {
+		proxywasm.LogCriticalf("failed to set tick period: %v", err)
 	}
 
+	proxywasm.LogInfo("Filter plugin started with ticker")
+
+	return types.OnPluginStartStatusOK
+}
+
+func (ctx *filterPluginContext) NewHttpContext(contextID uint32) types.HttpContext {
 	return &httpContext{
-		pluginCtx:          ctx,
-		httpContextID:      contextID,
-		httpContextQueueID: httpContextQueueID,
+		pluginCtx:     ctx,
+		httpContextID: contextID,
+	}
+}
+
+func (ctx *filterPluginContext) OnTick() {
+	scaledToZeroClusters, err := getScaledToZeroClusters()
+	if err != nil {
+		proxywasm.LogCriticalf("failed to get scaled to zero state: %v", err)
+		return
+	}
+
+	// check which clusters are no longer scaled to zero
+	for authority, pendingHTTPContexts := range ctx.pausedRequestsForCluster {
+		if !slices.Contains(scaledToZeroClusters, authority) {
+			proxywasm.LogInfof("%s is no longer scaled to zero and has %d pending http requests", authority, len(pendingHTTPContexts))
+
+			// forward all pending requests
+			for _, httpCtx := range pendingHTTPContexts {
+				proxywasm.LogInfof("Resuming request with ctx: %d for cluster: %s", httpCtx, authority)
+				err := proxywasm.SetEffectiveContext(httpCtx)
+				if err != nil {
+					proxywasm.LogCriticalf("failed to set http context: %v", err)
+					return
+				}
+				err = proxywasm.ResumeHttpRequest()
+				if err != nil {
+					proxywasm.LogCriticalf("failed to resume request: %v", err)
+					return
+				}
+			}
+
+			proxywasm.LogDebugf("Removing %s from pausedRequestsForCluster", authority)
+			delete(ctx.pausedRequestsForCluster, authority)
+		}
 	}
 }
 
@@ -57,40 +97,33 @@ func (ctx *httpContext) OnHttpRequestHeaders(numHeaders int, endOfStream bool) t
 	}
 
 	// Check on shared data if current target is scaled to zero
-	scaledToZero, err := ctx.isScaledToZero(authority)
+	scaledToZeroClusters, err := getScaledToZeroClusters()
 	if err != nil {
 		proxywasm.LogCriticalf("failed to get scaled to zero state: %v", err)
 		return types.ActionContinue
 	}
-	if scaledToZero {
-		proxywasm.LogInfof("%s is scaled to zero, http request will be paused, httpContextID: %d", authority, ctx.httpContextID)
+	if slices.Contains(scaledToZeroClusters, authority) {
+		proxywasm.LogDebugf("%s is scaled to zero, pausing http request with httpContextID: %d", authority, ctx.httpContextID)
 
-		payload := shared.EncodeRequestContext(shared.RequestContext{
-			Authority:     authority,
-			HttpContextID: ctx.httpContextID,
-		})
-		if err := proxywasm.EnqueueSharedQueue(ctx.httpContextQueueID, payload); err != nil {
-			proxywasm.LogCriticalf("failed to send httpContext to queue: %v", err)
-			return types.ActionContinue
+		pendingRequests, has := ctx.pluginCtx.pausedRequestsForCluster[authority]
+		if has {
+			ctx.pluginCtx.pausedRequestsForCluster[authority] = append(pendingRequests, ctx.httpContextID)
+		} else {
+			ctx.pluginCtx.pausedRequestsForCluster[authority] = []uint32{ctx.httpContextID}
 		}
 
-		proxywasm.LogInfof("sent httpContextID: %d to queue", ctx.httpContextID)
 		return types.ActionPause
 	}
 
-	proxywasm.LogInfof("Service is scaled up, directly forwarding http request to %s", authority)
+	proxywasm.LogDebugf("Service is scaled up, directly forwarding http request to %s", authority)
 	return types.ActionContinue
 }
 
-func (ctx *httpContext) isScaledToZero(authority string) (bool, error) {
+func getScaledToZeroClusters() ([]string, error) {
 	data, _, err := proxywasm.GetSharedData(shared.ScaledToZeroClustersKey)
 	if err != nil {
-		proxywasm.LogCriticalf("error getting shared data: %v", err)
-		return false, err
+		return nil, err
 	}
 
-	scaledToZeroClusters := shared.DecodeSharedData(data)
-	isScaledToZero := slices.Contains(scaledToZeroClusters, authority)
-	proxywasm.LogDebugf("%s isScaledToZero: %v", authority, isScaledToZero)
-	return isScaledToZero, nil
+	return shared.DecodeSharedData(data), nil
 }
