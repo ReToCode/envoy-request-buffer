@@ -29,7 +29,9 @@ brew install tinygo
 
 ## Demo
 
+<a href="https://asciinema.org/a/640583?autoplay=1" target="_blank"><img src="https://asciinema.org/a/640583.svg" /></a>
 
+For more info about the demo see the scripts in [demo](demo)
 
 ## Building + running
 
