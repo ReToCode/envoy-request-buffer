@@ -95,3 +95,14 @@ grpcurl -plaintext -authority grpc.example.com localhost:9000 grpc.health.v1.Hea
 - [ ] Make it work with Envoy Gateway-API integration
 - [ ] Make it work on K8s, get the scaled-to-zero status from K8s
 - [ ] Poke the control-plane to actually scale on requests when scaled to zero
+
+## Learnings
+
+* For now the proxy-wasm-go-sdk uses `tinygo`, which has some downsides
+  * Not all standard library packages are supported
+  * No serialization packages work
+  * Limited working dependencies available
+  * No gRPC support for now --> https://github.com/tetratelabs/proxy-wasm-go-sdk/issues/14
+* The API of the SDK is a bit peculiar
+* Error reporting is quite limited (e.g. when a httpContextID is no longer available, a generic `bad argument` error is returned)
+* Another option might be to consider using Rust for the module, [as Kuadrant dit](https://github.com/Kuadrant/wasm-shim) 
