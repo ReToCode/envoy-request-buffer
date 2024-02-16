@@ -16,7 +16,12 @@ type vmContext struct {
 
 type servicePluginContext struct {
 	contextID uint32
+	config    *pluginConfig
 	types.DefaultPluginContext
+}
+
+type pluginConfig struct {
+	ControlPlaneURL string `json:"control-plane-url"`
 }
 
 func main() {
@@ -40,6 +45,19 @@ func (*vmContext) NewPluginContext(contextID uint32) types.PluginContext {
 }
 
 func (ctx *servicePluginContext) OnPluginStart(pluginConfigurationSize int) types.OnPluginStartStatus {
+	data, err := proxywasm.GetPluginConfiguration()
+	if err != nil {
+		proxywasm.LogCriticalf("error reading plugin configuration: %v", err)
+		return types.OnPluginStartStatusFailed
+	}
+
+	config, err := parseConfig(data)
+	if err != nil {
+		proxywasm.LogCriticalf("failed to parse plugin config: %s, err: %v", data, err)
+		return types.OnPluginStartStatusFailed
+	}
+	ctx.config = config
+
 	// Start a ticker to get status from control-plane
 	if err := proxywasm.SetTickPeriodMilliSeconds(tickMilliseconds); err != nil {
 		proxywasm.LogCriticalf("failed to set tick period: %v", err)
@@ -50,15 +68,30 @@ func (ctx *servicePluginContext) OnPluginStart(pluginConfigurationSize int) type
 	return types.OnPluginStartStatusOK
 }
 
+func parseConfig(data []byte) (*pluginConfig, error) {
+	pc := &pluginConfig{}
+	err := json.Unmarshal(data, pc)
+	if err != nil {
+		return nil, err
+	}
+	return pc, nil
+}
+
 func (ctx *servicePluginContext) OnTick() {
 	// Call our control plane to get the new list of scaled to zero clusters
 	headers := [][2]string{
 		{":method", "GET"},
-		{":authority", "control-plane"},
+		{":authority", ctx.config.ControlPlaneURL},
 		{":path", "/"},
 		{"accept", "*/*"},
 	}
-	if _, err := proxywasm.DispatchHttpCall("control-plane", headers, nil, nil,
+
+	// TODO: 7001 is hardcoded for now, make it configurable
+	// outbound|7001||control-plane.default.svc.cluster.local
+	clusterName := "outbound|7001||" + ctx.config.ControlPlaneURL
+	proxywasm.LogInfof("calling out to %s with headers: %v", clusterName, headers)
+
+	if _, err := proxywasm.DispatchHttpCall(clusterName, headers, nil, nil,
 		5000, ctx.controlPlaneResponseCallback); err != nil {
 		proxywasm.LogCriticalf("dipatch httpcall failed: %v", err)
 	}

@@ -44,10 +44,21 @@ grpcurl -plaintext grpc.172.17.0.100.sslip.io:80 grpc.health.v1.Health/Check`
 }
 ```
 
-## Inspect the envoy configuration
+## Setting clusters to or not to scaled to zero
 
 ```bash
-istioctl proxy-config all -n default external-gateway-istio-7cd98768fc-g95gh -o json | copyfile
+curl -X POST "control-plane.172.17.0.100.sslip.io/set-scaled-to-zero?host=http.172.17.0.100.sslip.io"
+```
+
+## Debugging
+
+```bash
+# get envoy config
+istioctl proxy-config all -n default deploy/external-gateway-istio -o json | copyfile
+```
+```bash
+# set debug log in WASM
+istioctl proxy-config log deploy/external-gateway-istio -n default --level "wasm:debug"
 ```
 
 ## Adding the WASM module

@@ -11,6 +11,6 @@ spec:
   imagePullPolicy: IfNotPresent
   type: HTTP
   phase: UNSPECIFIED_PHASE
-#  pluginConfig:
-#    openid_server: authn
-#    openid_realm: ingress
+  pluginConfig:
+    control-plane-url: control-plane.default.svc.cluster.local
+
