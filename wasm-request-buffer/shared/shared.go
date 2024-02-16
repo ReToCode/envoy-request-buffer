@@ -5,10 +5,8 @@ import (
 )
 
 const (
-	VMID                    = "request-buffer"
 	ScaledToZeroClustersKey = "scaled_to_zero_clusters_key"
-
-	splitter = "~"
+	splitter                = "~"
 )
 
 type RequestContext struct {

@@ -1,0 +1,16 @@
+apiVersion: extensions.istio.io/v1alpha1
+kind: WasmPlugin
+metadata:
+  name: request-buffer-service
+  namespace: default
+spec:
+  selector:
+    matchLabels:
+      istio.io/gateway-name: external-gateway
+  url: oci://quay.io/rlehmann/envoy-request-buffer-wasm-service:latest
+  imagePullPolicy: IfNotPresent
+  type: HTTP
+  phase: UNSPECIFIED_PHASE
+#  pluginConfig:
+#    openid_server: authn
+#    openid_realm: ingress

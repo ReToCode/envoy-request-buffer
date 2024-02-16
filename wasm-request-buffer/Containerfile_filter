@@ -1,0 +1,12 @@
+FROM tinygo/tinygo:0.30.0 as build
+
+WORKDIR /go/src/app
+COPY . .
+
+RUN go mod download
+
+RUN tinygo build -o request_buffer_filter.wasm -scheduler=none -target=wasi wasm-request-buffer/filter/main.go
+
+FROM scratch
+
+COPY --from=build /go/src/app/request_buffer_filter.wasm /plugin.wasm
