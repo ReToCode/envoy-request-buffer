@@ -10,7 +10,7 @@ import (
 
 const authorityKey = ":authority"
 
-const tickMilliseconds uint32 = 1000 * 1 // every second
+const tickMilliseconds uint32 = 1000 // every second
 
 type filterVmContext struct {
 	types.DefaultVMContext
@@ -73,15 +73,13 @@ func (ctx *filterPluginContext) OnTick() {
 				proxywasm.LogInfof("Resuming request with ctx: %d for cluster: %s", httpCtx, authority)
 				err := proxywasm.SetEffectiveContext(httpCtx)
 				if err != nil {
-					proxywasm.LogCriticalf("failed to set http context: %v", err)
-					// TODO: when the client closes the connection, this is allowed to fail
-					return
+					// error can happen when client already the connection
+					proxywasm.LogDebugf("failed to set http context: %v", err)
 				}
 				err = proxywasm.ResumeHttpRequest()
 				if err != nil {
-					proxywasm.LogCriticalf("failed to resume request: %v", err)
-					// TODO: when the client closes the connection, this is allowed to fail
-					return
+					// error can happen when client already the connection
+					proxywasm.LogDebugf("failed to resume request: %v", err)
 				}
 			}
 

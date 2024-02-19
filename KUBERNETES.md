@@ -64,5 +64,5 @@ istioctl proxy-config log deploy/external-gateway-istio -n default --level "wasm
 ## Adding the WASM module
 
 ```bash
-kubectl apply -f k8s/yaml/wasm-plugin-service.yaml
+kubectl apply -f k8s/yaml/wasm-plugin-request-buffer.yaml
 ```

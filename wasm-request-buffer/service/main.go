@@ -8,7 +8,7 @@ import (
 	"github.com/tetratelabs/proxy-wasm-go-sdk/proxywasm/types"
 )
 
-const tickMilliseconds uint32 = 1000 * 10 // every 5 seconds
+const tickMilliseconds uint32 = 1000 * 2 // every 2 seconds
 
 type vmContext struct {
 	types.DefaultVMContext
@@ -42,6 +42,11 @@ func (*vmContext) NewPluginContext(contextID uint32) types.PluginContext {
 	return &servicePluginContext{
 		contextID: contextID,
 	}
+}
+
+// NewHttpContext is only necessary because istio does not (yet) support a Kind: WasmModule with type WasmService
+func (ctx *servicePluginContext) NewHttpContext(contextID uint32) types.HttpContext {
+	return &types.DefaultHttpContext{}
 }
 
 func (ctx *servicePluginContext) OnPluginStart(pluginConfigurationSize int) types.OnPluginStartStatus {
