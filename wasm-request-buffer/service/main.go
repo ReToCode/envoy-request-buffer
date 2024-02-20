@@ -16,12 +16,8 @@ type vmContext struct {
 
 type servicePluginContext struct {
 	contextID uint32
-	config    *pluginConfig
+	config    *shared.PluginConfig
 	types.DefaultPluginContext
-}
-
-type pluginConfig struct {
-	ControlPlaneURL string `json:"control-plane-url"`
 }
 
 func main() {
@@ -56,7 +52,7 @@ func (ctx *servicePluginContext) OnPluginStart(pluginConfigurationSize int) type
 		return types.OnPluginStartStatusFailed
 	}
 
-	config, err := parseConfig(data)
+	config, err := shared.ParseConfig(data)
 	if err != nil {
 		proxywasm.LogCriticalf("failed to parse plugin config: %s, err: %v", data, err)
 		return types.OnPluginStartStatusFailed
@@ -71,15 +67,6 @@ func (ctx *servicePluginContext) OnPluginStart(pluginConfigurationSize int) type
 
 	proxywasm.LogInfo("Service plugin started with ticker")
 	return types.OnPluginStartStatusOK
-}
-
-func parseConfig(data []byte) (*pluginConfig, error) {
-	pc := &pluginConfig{}
-	err := json.Unmarshal(data, pc)
-	if err != nil {
-		return nil, err
-	}
-	return pc, nil
 }
 
 func (ctx *servicePluginContext) OnTick() {
@@ -98,7 +85,7 @@ func (ctx *servicePluginContext) OnTick() {
 
 	if _, err := proxywasm.DispatchHttpCall(clusterName, headers, nil, nil,
 		5000, ctx.controlPlaneResponseCallback); err != nil {
-		proxywasm.LogCriticalf("dipatch httpcall failed: %v", err)
+		proxywasm.LogCriticalf("dispatch httpcall failed: %v", err)
 	}
 }
 

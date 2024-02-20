@@ -1,6 +1,7 @@
 package main
 
 import (
+	"context"
 	"encoding/json"
 	"flag"
 	"fmt"
@@ -11,6 +12,7 @@ import (
 	"sync"
 	"time"
 
+	autoscalingv1 "k8s.io/api/autoscaling/v1"
 	"k8s.io/apimachinery/pkg/labels"
 	"k8s.io/client-go/informers"
 	"k8s.io/client-go/kubernetes"
@@ -26,6 +28,8 @@ import (
 	"sigs.k8s.io/gateway-api/pkg/client/informers/externalversions/apis/v1"
 
 	coreinformers "k8s.io/client-go/informers/core/v1"
+
+	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 )
 
 const (
@@ -34,6 +38,8 @@ const (
 )
 
 type RequestBufferController struct {
+	k8sClient *kubernetes.Clientset
+
 	k8sInformerFactory informers.SharedInformerFactory
 	gwInformerFactory  gwinformers.SharedInformerFactory
 
@@ -74,7 +80,7 @@ func main() {
 	k8sInformerFactory := informers.NewSharedInformerFactory(k8sClient, time.Hour*24)
 	gwInformerFactory := gwinformers.NewSharedInformerFactory(gwClient, time.Hour*24)
 
-	controller, err := newRequestBufferController(k8sInformerFactory, gwInformerFactory)
+	controller, err := newRequestBufferController(k8sClient, k8sInformerFactory, gwInformerFactory)
 	if err != nil {
 		log.Fatalf("Error creating controller: %v", err)
 	}
@@ -88,24 +94,29 @@ func main() {
 
 	// HTTP server to return the state to envoy
 	http.HandleFunc("/", controller.getScaledToZeroClusters)
+	http.HandleFunc("/poke-scale-up", controller.pokeScaleUp)
 	srv := &http.Server{
 		Addr:         ":" + strconv.Itoa(httpPort),
 		WriteTimeout: 5 * time.Second,
 		ReadTimeout:  5 * time.Second,
 	}
-	log.Printf("Starting HTTP server on port: %d\n", httpPort)
+	log.Printf("Starting HTTP server on port: %d", httpPort)
 	log.Fatal(srv.ListenAndServe())
 }
 
-func newRequestBufferController(k8sInformerFactory informers.SharedInformerFactory, gwInformerFactory gwinformers.SharedInformerFactory) (*RequestBufferController, error) {
+func newRequestBufferController(k8sClient *kubernetes.Clientset, k8sInformerFactory informers.SharedInformerFactory, gwInformerFactory gwinformers.SharedInformerFactory) (*RequestBufferController, error) {
 	endpointsInformer := k8sInformerFactory.Core().V1().Endpoints()
 	httpRouteInformer := gwInformerFactory.Gateway().V1().HTTPRoutes()
 
 	c := &RequestBufferController{
-		k8sInformerFactory:  k8sInformerFactory,
-		gwInformerFactory:   gwInformerFactory,
-		endpointsInformer:   endpointsInformer,
-		httpRouteInformer:   httpRouteInformer,
+		k8sClient: k8sClient,
+
+		k8sInformerFactory: k8sInformerFactory,
+		gwInformerFactory:  gwInformerFactory,
+
+		endpointsInformer: endpointsInformer,
+		httpRouteInformer: httpRouteInformer,
+
 		scaledToZeroTargets: make(map[string][]string),
 	}
 	_, err := endpointsInformer.Informer().AddEventHandler(
@@ -150,6 +161,103 @@ func (c *RequestBufferController) getScaledToZeroClusters(w http.ResponseWriter,
 		log.Printf("failed to write to output stream, err: %v\n", err)
 		w.WriteHeader(http.StatusInternalServerError)
 	}
+}
+
+func (c *RequestBufferController) pokeScaleUp(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodPost {
+		w.WriteHeader(http.StatusMethodNotAllowed)
+		return
+	}
+
+	err := r.ParseForm()
+	if err != nil {
+		log.Printf("failed to POST parse form: %v", err)
+		w.WriteHeader(http.StatusBadRequest)
+		return
+	}
+
+	hostname := r.Form.Get("host")
+
+	if hostname == "" {
+		log.Println("host not specified")
+		w.WriteHeader(http.StatusBadRequest)
+		return
+	}
+
+	routes, err := c.httpRouteInformer.Lister().List(labels.Everything())
+	if err != nil {
+		log.Printf("failed to list HTTPRoutes: %v", err)
+		w.WriteHeader(http.StatusBadRequest)
+		return
+	}
+
+	for _, rt := range routes {
+		for _, h := range rt.Spec.Hostnames {
+			if string(h) == hostname {
+				if err = c.triggerScaleUp(rt); err != nil {
+					log.Printf("Failed to trigger scale-up: %v", err)
+					w.WriteHeader(http.StatusInternalServerError)
+				} else {
+					w.WriteHeader(http.StatusOK)
+				}
+				return
+			}
+		}
+	}
+
+	log.Printf("Host :%s was not found in any HTTPRoute", hostname)
+	w.WriteHeader(http.StatusNotFound)
+}
+
+func (c *RequestBufferController) triggerScaleUp(rt *gwapiv1.HTTPRoute) error {
+	log.Printf("Triggering scale-up for HTTPRoute: %s/%s", rt.Namespace, rt.Name)
+
+	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	defer cancel()
+
+	for _, rule := range rt.Spec.Rules {
+		for _, ref := range rule.BackendRefs {
+			if *ref.Kind == "Service" {
+				// Get the Service labels
+				service, err := c.k8sClient.CoreV1().Services(rt.Namespace).Get(ctx, string(ref.Name), metav1.GetOptions{})
+				if err != nil {
+					return err
+				}
+
+				// Get the deployment pointing to the service
+				deployments, err := c.k8sClient.AppsV1().Deployments(rt.Namespace).List(ctx, metav1.ListOptions{})
+				if err != nil {
+					return err
+				}
+				if deployments == nil || len(deployments.Items) == 0 {
+					return fmt.Errorf("could not find any deployments in namespace: %s", rt.Namespace)
+				}
+
+				for _, d := range deployments.Items {
+					// Scale deployments where the Service selector matches the Deployment selectors
+					for k, v := range service.Spec.Selector {
+						if d.Spec.Selector.MatchLabels[k] == v {
+							log.Printf("Scaling up deployment: %s/%s to replica=1", d.Namespace, d.Name)
+							_, err = c.k8sClient.AppsV1().Deployments(rt.Namespace).UpdateScale(ctx, d.Name, &autoscalingv1.Scale{
+								ObjectMeta: metav1.ObjectMeta{
+									Name:      d.Name,
+									Namespace: d.Namespace,
+								},
+								Spec: autoscalingv1.ScaleSpec{
+									Replicas: 1,
+								},
+								Status: autoscalingv1.ScaleStatus{},
+							}, metav1.UpdateOptions{})
+							if err != nil {
+								return err
+							}
+						}
+					}
+				}
+			}
+		}
+	}
+	return nil
 }
 
 func (c *RequestBufferController) Run(stopCh chan struct{}) error {

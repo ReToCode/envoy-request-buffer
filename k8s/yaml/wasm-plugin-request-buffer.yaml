@@ -29,3 +29,5 @@ spec:
   imagePullPolicy: IfNotPresent
   type: HTTP
   phase: UNSPECIFIED_PHASE
+  pluginConfig:
+    control-plane-url: control-plane.default.svc.cluster.local

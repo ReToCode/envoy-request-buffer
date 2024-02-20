@@ -59,9 +59,10 @@ metadata:
   name: control-plane-cluster-role
 rules:
   - apiGroups:
-      - networking.k8s.io
+      - ""
     resources:
       - endpoints
+      - services
     verbs:
       - get
       - list
@@ -74,6 +75,16 @@ rules:
       - get
       - list
       - watch
+  - apiGroups:
+      - apps
+    resources:
+      - deployments
+      - deployments/scale
+    verbs:
+      - get
+      - list
+      - patch
+      - update
 ---
 apiVersion: rbac.authorization.k8s.io/v1
 kind: ClusterRoleBinding

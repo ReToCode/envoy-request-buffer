@@ -19,6 +19,7 @@ type filterVmContext struct {
 type filterPluginContext struct {
 	types.DefaultPluginContext
 	contextID                uint32
+	config                   *shared.PluginConfig
 	pausedRequestsForCluster map[string][]uint32 // [authority][[]httpContextIDs]
 }
 
@@ -40,6 +41,19 @@ func (*filterVmContext) NewPluginContext(contextID uint32) types.PluginContext {
 }
 
 func (ctx *filterPluginContext) OnPluginStart(pluginConfigurationSize int) types.OnPluginStartStatus {
+	data, err := proxywasm.GetPluginConfiguration()
+	if err != nil {
+		proxywasm.LogCriticalf("error reading plugin configuration: %v", err)
+		return types.OnPluginStartStatusFailed
+	}
+
+	config, err := shared.ParseConfig(data)
+	if err != nil {
+		proxywasm.LogCriticalf("failed to parse plugin config: %s, err: %v", data, err)
+		return types.OnPluginStartStatusFailed
+	}
+	ctx.config = config
+
 	if err := proxywasm.SetTickPeriodMilliSeconds(tickMilliseconds); err != nil {
 		proxywasm.LogCriticalf("failed to set tick period: %v", err)
 	}
@@ -110,6 +124,36 @@ func (ctx *httpContext) OnHttpRequestHeaders(numHeaders int, endOfStream bool) t
 			ctx.pluginCtx.pausedRequestsForCluster[authority] = append(pendingRequests, ctx.httpContextID)
 		} else {
 			ctx.pluginCtx.pausedRequestsForCluster[authority] = []uint32{ctx.httpContextID}
+		}
+
+		// TODO: we could optimize this
+		// 1) debounce it
+		// 2) do it from the shared service using a queue
+		proxywasm.LogDebugf("Poking scale-up for authority: %s on http request with httpContextID: %d", authority, ctx.httpContextID)
+		headers := [][2]string{
+			{":method", "POST"},
+			{":authority", ctx.pluginCtx.config.ControlPlaneURL},
+			{":path", "/poke-scale-up?host=" + authority},
+			{"accept", "*/*"},
+		}
+
+		// TODO: 7001 is hardcoded for now, make it configurable
+		// outbound|7001||control-plane.default.svc.cluster.local
+		clusterName := "outbound|7001||" + ctx.pluginCtx.config.ControlPlaneURL
+		proxywasm.LogInfof("Calling out to %s with headers: %v", clusterName, headers)
+
+		if _, err := proxywasm.DispatchHttpCall(clusterName, headers, nil, nil,
+			5000, func(numHeaders, bodySize, numTrailers int) {
+				// we just log the response here
+				headers, err := proxywasm.GetHttpCallResponseHeaders()
+				if err != nil {
+					proxywasm.LogCriticalf("failed to get control-plane response headers: %v", err)
+					return
+				}
+
+				proxywasm.LogInfof("Received the following response headers from control-plane: %s", headers)
+			}); err != nil {
+			proxywasm.LogCriticalf("dispatch httpcall failed: %v", err)
 		}
 
 		return types.ActionPause
