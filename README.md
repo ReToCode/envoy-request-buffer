@@ -17,6 +17,13 @@ Note: The control-plane does not really check if the backend is scaled, nor is t
 * [In Kubernetes](./KUBERNETES.md)
 * [Local envoy in docker-compose](./ENVOY.md)
 
+## Kubernetes Demo
+
+<a href="https://asciinema.org/a/641795" target="_blank"><img src="https://asciinema.org/a/641795.svg" /></a>
+
+For more info about the demo see the scripts in [demo](./kubernetes/demo)
+
+
 ## Things to look at next
  
 - [ ] Testing performance and overhead
