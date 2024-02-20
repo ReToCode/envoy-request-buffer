@@ -1,5 +1,12 @@
 # Testing on Kubernetes
 
+## Demo
+
+<a href="https://asciinema.org/a/641795" target="_blank"><img src="https://asciinema.org/a/641795.svg" /></a>
+
+For more info about the demo see the scripts in [demo](./kubernetes/demo)
+
+
 ## Building
 
 ```bash
@@ -20,10 +27,10 @@ istioctl install --set profile=minimal -y
 ## Create Gateway API resources
 
 ```bash
-kubectl apply -f k8s/yaml/gateway.yaml
-kubectl apply -f k8s/yaml/grpc-upstream.yaml
-kubectl apply -f k8s/yaml/http-upstream.yaml
-kubectl apply -f k8s/yaml/control-plane.yaml
+kubectl apply -f kubernetes/yaml/gateway.yaml
+kubectl apply -f kubernetes/yaml/grpc-upstream.yaml
+kubectl apply -f kubernetes/yaml/http-upstream.yaml
+kubectl apply -f kubernetes/yaml/control-plane.yaml
 ```
 
 ## Check if it is working
@@ -36,7 +43,7 @@ Hello from HTTP Server
 ```
 
 ```bash
-grpcurl -plaintext grpc.172.17.0.100.sslip.io:80 grpc.health.v1.Health/Check`
+grpcurl -plaintext -authority grpc.172.17.0.100.sslip.io grpc.172.17.0.100.sslip.io:80 grpc.health.v1.Health/Check
 ```
 ```text
 {
@@ -44,11 +51,30 @@ grpcurl -plaintext grpc.172.17.0.100.sslip.io:80 grpc.health.v1.Health/Check`
 }
 ```
 
-## Setting clusters to or not to scaled to zero
+## Adding the WASM module
 
 ```bash
-curl -X POST "control-plane.172.17.0.100.sslip.io/set-scaled-to-zero?host=http.172.17.0.100.sslip.io"
+kubectl apply -f kubernetes/yaml/wasm-plugin-request-buffer.yaml
 ```
+
+## Scale the deployments to zero
+
+```bash
+kubectl scale deploy/grpc-upstream -n default --replicas=0
+kubectl scale deploy/http-upstream -n default --replicas=0
+```
+
+## Send requests again and watch scale-from-zero
+
+```bash
+watch kubectl get deploy http-upstream grpc-upstream -n default
+```
+
+```bash
+curl http://http.172.17.0.100.sslip.io
+grpcurl -plaintext -authority grpc.172.17.0.100.sslip.io grpc.172.17.0.100.sslip.io:80 grpc.health.v1.Health/Check
+```
+
 
 ## Debugging
 
@@ -61,8 +87,3 @@ istioctl proxy-config all -n default deploy/external-gateway-istio -o json | cop
 istioctl proxy-config log deploy/external-gateway-istio -n default --level "wasm:debug"
 ```
 
-## Adding the WASM module
-
-```bash
-kubectl apply -f k8s/yaml/wasm-plugin-request-buffer.yaml
-```
