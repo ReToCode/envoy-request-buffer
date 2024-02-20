@@ -23,18 +23,18 @@ services:
       - "8001:8001" # admin
       - "9000:9000" # traffic
     volumes:
-      - ./envoy/envoy.yaml:/etc/envoy.yaml
+      - ./envoy.yaml:/etc/envoy.yaml
       - ./target/:/opt/wasm/
   control-plane:
     build:
-      dockerfile: control-plane/Containerfile
-      context: .
+      dockerfile: local-envoy/static-control-plane/Containerfile
+      context: ..
     ports:
       - "7001:7001"
   upstream:
     build:
-      dockerfile: upstream/Containerfile
-      context: .
+      dockerfile: ./upstream/Containerfile
+      context: ..
     ports:
       - "50001:50001" # http
       - "50002:50002" # grpc

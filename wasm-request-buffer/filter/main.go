@@ -8,9 +8,9 @@ import (
 	"github.com/tetratelabs/proxy-wasm-go-sdk/proxywasm/types"
 )
 
-const authorityKey = ":authority"
+const hostHeaderKey = "host"
 
-const tickMilliseconds uint32 = 1000 * 1 // every second
+const tickMilliseconds uint32 = 1000 // every second
 
 type filterVmContext struct {
 	types.DefaultVMContext
@@ -19,7 +19,8 @@ type filterVmContext struct {
 type filterPluginContext struct {
 	types.DefaultPluginContext
 	contextID                uint32
-	pausedRequestsForCluster map[string][]uint32 // [authority][[]httpContextIDs]
+	config                   *shared.PluginConfig
+	pausedRequestsForCluster map[string][]uint32 // [host][[]httpContextIDs]
 }
 
 type httpContext struct {
@@ -40,6 +41,19 @@ func (*filterVmContext) NewPluginContext(contextID uint32) types.PluginContext {
 }
 
 func (ctx *filterPluginContext) OnPluginStart(pluginConfigurationSize int) types.OnPluginStartStatus {
+	data, err := proxywasm.GetPluginConfiguration()
+	if err != nil {
+		proxywasm.LogCriticalf("error reading plugin configuration: %v", err)
+		return types.OnPluginStartStatusFailed
+	}
+
+	config, err := shared.ParseConfig(data)
+	if err != nil {
+		proxywasm.LogCriticalf("failed to parse plugin config: %s, err: %v", data, err)
+		return types.OnPluginStartStatusFailed
+	}
+	ctx.config = config
+
 	if err := proxywasm.SetTickPeriodMilliSeconds(tickMilliseconds); err != nil {
 		proxywasm.LogCriticalf("failed to set tick period: %v", err)
 	}
@@ -64,37 +78,35 @@ func (ctx *filterPluginContext) OnTick() {
 	}
 
 	// check which clusters are no longer scaled to zero
-	for authority, pendingHTTPContexts := range ctx.pausedRequestsForCluster {
-		if !slices.Contains(scaledToZeroClusters, authority) {
-			proxywasm.LogInfof("%s is no longer scaled to zero and has %d pending http requests", authority, len(pendingHTTPContexts))
+	for host, pendingHTTPContexts := range ctx.pausedRequestsForCluster {
+		if !slices.Contains(scaledToZeroClusters, host) {
+			proxywasm.LogInfof("%s is no longer scaled to zero and has %d pending http requests", host, len(pendingHTTPContexts))
 
 			// forward all pending requests
 			for _, httpCtx := range pendingHTTPContexts {
-				proxywasm.LogInfof("Resuming request with ctx: %d for cluster: %s", httpCtx, authority)
+				proxywasm.LogInfof("Resuming request with ctx: %d for cluster: %s", httpCtx, host)
 				err := proxywasm.SetEffectiveContext(httpCtx)
 				if err != nil {
-					proxywasm.LogCriticalf("failed to set http context: %v", err)
-					// TODO: when the client closes the connection, this is allowed to fail
-					return
+					// error can happen when client already the connection
+					proxywasm.LogDebugf("failed to set http context: %v", err)
 				}
 				err = proxywasm.ResumeHttpRequest()
 				if err != nil {
-					proxywasm.LogCriticalf("failed to resume request: %v", err)
-					// TODO: when the client closes the connection, this is allowed to fail
-					return
+					// error can happen when client already the connection
+					proxywasm.LogDebugf("failed to resume request: %v", err)
 				}
 			}
 
-			proxywasm.LogDebugf("Removing %s from pausedRequestsForCluster", authority)
-			delete(ctx.pausedRequestsForCluster, authority)
+			proxywasm.LogDebugf("Removing %s from pausedRequestsForCluster", host)
+			delete(ctx.pausedRequestsForCluster, host)
 		}
 	}
 }
 
 func (ctx *httpContext) OnHttpRequestHeaders(numHeaders int, endOfStream bool) types.Action {
-	authority, err := proxywasm.GetHttpRequestHeader(authorityKey)
+	host, err := proxywasm.GetHttpRequestHeader(hostHeaderKey)
 	if err != nil {
-		proxywasm.LogCritical("failed to get request header: ':authority'")
+		proxywasm.LogCritical("failed to get request http header: host'")
 		return types.ActionContinue
 	}
 
@@ -104,20 +116,47 @@ func (ctx *httpContext) OnHttpRequestHeaders(numHeaders int, endOfStream bool) t
 		proxywasm.LogCriticalf("failed to get scaled to zero state: %v", err)
 		return types.ActionContinue
 	}
-	if slices.Contains(scaledToZeroClusters, authority) {
-		proxywasm.LogDebugf("%s is scaled to zero, pausing http request with httpContextID: %d", authority, ctx.httpContextID)
+	if slices.Contains(scaledToZeroClusters, host) {
+		proxywasm.LogDebugf("%s is scaled to zero, pausing http request with httpContextID: %d", host, ctx.httpContextID)
 
-		pendingRequests, has := ctx.pluginCtx.pausedRequestsForCluster[authority]
+		pendingRequests, has := ctx.pluginCtx.pausedRequestsForCluster[host]
 		if has {
-			ctx.pluginCtx.pausedRequestsForCluster[authority] = append(pendingRequests, ctx.httpContextID)
+			ctx.pluginCtx.pausedRequestsForCluster[host] = append(pendingRequests, ctx.httpContextID)
 		} else {
-			ctx.pluginCtx.pausedRequestsForCluster[authority] = []uint32{ctx.httpContextID}
+			ctx.pluginCtx.pausedRequestsForCluster[host] = []uint32{ctx.httpContextID}
+		}
+
+		// TODO: we could optimize this
+		// 1) debounce it
+		// 2) do it from the shared service using a queue
+		proxywasm.LogDebugf("Poking scale-up for host: %s on http request with httpContextID: %d", host, ctx.httpContextID)
+		headers := [][2]string{
+			{":method", "POST"},
+			{":authority", ctx.pluginCtx.config.ControlPlaneURL},
+			{":path", "/poke-scale-up?host=" + host},
+			{"accept", "*/*"},
+		}
+
+		proxywasm.LogInfof("Calling out to %s with headers: %v", ctx.pluginCtx.config.ControlPlaneCluster, headers)
+
+		if _, err := proxywasm.DispatchHttpCall(ctx.pluginCtx.config.ControlPlaneCluster, headers, nil, nil,
+			5000, func(numHeaders, bodySize, numTrailers int) {
+				// we just log the response here
+				headers, err := proxywasm.GetHttpCallResponseHeaders()
+				if err != nil {
+					proxywasm.LogCriticalf("failed to get control-plane response headers: %v", err)
+					return
+				}
+
+				proxywasm.LogInfof("Received the following response headers from control-plane: %s", headers)
+			}); err != nil {
+			proxywasm.LogCriticalf("dispatch httpcall failed: %v", err)
 		}
 
 		return types.ActionPause
 	}
 
-	proxywasm.LogDebugf("Service is scaled up, directly forwarding http request to %s", authority)
+	proxywasm.LogDebugf("Service is scaled up, directly forwarding http request to %s", host)
 	return types.ActionContinue
 }
 

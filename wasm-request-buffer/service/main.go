@@ -8,7 +8,7 @@ import (
 	"github.com/tetratelabs/proxy-wasm-go-sdk/proxywasm/types"
 )
 
-const tickMilliseconds uint32 = 1000 * 10 // every 5 seconds
+const tickMilliseconds uint32 = 1000 * 2 // every 2 seconds
 
 type vmContext struct {
 	types.DefaultVMContext
@@ -16,6 +16,7 @@ type vmContext struct {
 
 type servicePluginContext struct {
 	contextID uint32
+	config    *shared.PluginConfig
 	types.DefaultPluginContext
 }
 
@@ -39,7 +40,25 @@ func (*vmContext) NewPluginContext(contextID uint32) types.PluginContext {
 	}
 }
 
+// NewHttpContext is only necessary because istio does not (yet) support a Kind: WasmModule with type WasmService
+func (ctx *servicePluginContext) NewHttpContext(contextID uint32) types.HttpContext {
+	return &types.DefaultHttpContext{}
+}
+
 func (ctx *servicePluginContext) OnPluginStart(pluginConfigurationSize int) types.OnPluginStartStatus {
+	data, err := proxywasm.GetPluginConfiguration()
+	if err != nil {
+		proxywasm.LogCriticalf("error reading plugin configuration: %v", err)
+		return types.OnPluginStartStatusFailed
+	}
+
+	config, err := shared.ParseConfig(data)
+	if err != nil {
+		proxywasm.LogCriticalf("failed to parse plugin config: %s, err: %v", data, err)
+		return types.OnPluginStartStatusFailed
+	}
+	ctx.config = config
+
 	// Start a ticker to get status from control-plane
 	if err := proxywasm.SetTickPeriodMilliSeconds(tickMilliseconds); err != nil {
 		proxywasm.LogCriticalf("failed to set tick period: %v", err)
@@ -54,13 +73,16 @@ func (ctx *servicePluginContext) OnTick() {
 	// Call our control plane to get the new list of scaled to zero clusters
 	headers := [][2]string{
 		{":method", "GET"},
-		{":authority", "control-plane"},
+		{":authority", ctx.config.ControlPlaneURL},
 		{":path", "/"},
 		{"accept", "*/*"},
 	}
-	if _, err := proxywasm.DispatchHttpCall("control-plane", headers, nil, nil,
+
+	proxywasm.LogInfof("calling out to %s with headers: %v", ctx.config.ControlPlaneCluster, headers)
+
+	if _, err := proxywasm.DispatchHttpCall(ctx.config.ControlPlaneCluster, headers, nil, nil,
 		5000, ctx.controlPlaneResponseCallback); err != nil {
-		proxywasm.LogCriticalf("dipatch httpcall failed: %v", err)
+		proxywasm.LogCriticalf("dispatch httpcall failed: %v", err)
 	}
 }
 

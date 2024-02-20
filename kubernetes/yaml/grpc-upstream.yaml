@@ -1,0 +1,47 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: grpc-upstream
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: grpc-upstream
+  template:
+    metadata:
+      labels:
+        app: grpc-upstream
+    spec:
+      containers:
+        - name: grpc-upstream
+          image: quay.io/rlehmann/upstream:latest
+          ports:
+            - containerPort: 50002
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: grpc-upstream
+spec:
+  selector:
+    app: grpc-upstream
+  ports:
+    - protocol: TCP
+      port: 50002
+      appProtocol: kubernetes.io/h2c
+      targetPort: 50002
+
+---
+apiVersion: gateway.networking.k8s.io/v1
+kind: HTTPRoute
+metadata:
+  name: grpc-upstream-route
+spec:
+  parentRefs:
+    - name: external-gateway
+  hostnames:
+    - "grpc.172.17.0.100.sslip.io"
+  rules:
+    - backendRefs:
+        - name: grpc-upstream
+          port: 50002
