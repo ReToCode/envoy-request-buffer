@@ -26,6 +26,23 @@ The networking is configured using [gateway-api](https://gateway-api.sigs.k8s.io
 * [In Kubernetes](./KUBERNETES.md)
 * [Local envoy in docker-compose](./ENVOY.md)
 
+## Where to find what
+
+```bash
+tree -d
+.
+├── kubernetes                 # kubernetes variant
+│   ├── control-plane          # control-plane that reads from K8s API and scales via K8s API
+│   └── yaml                   # manifests used on K8s
+├── local-envoy                # variant with local envoy in docker-compose
+│   ├── static-control-plane   # a static control-plane where you set "scaled-to-zero" manually
+├── upstream                   # dummy upstream backend with http and gRPC
+└── wasm-request-buffer        # wasm code
+    ├── filter                 # code running on every http-request
+    ├── service                # shared code running on a ticker to talk to control-plane
+    └── shared                 # shared stuff
+```
+
 ## Kubernetes Demo
 
 <a href="https://asciinema.org/a/641795" target="_blank"><img src="https://asciinema.org/a/641795.svg" /></a>
@@ -38,7 +55,7 @@ For more info about the demo see the scripts in [demo](./kubernetes/demo)
 - [ ] Testing performance and overhead
 - [ ] Testing behaviour, CPU+memory consumption with a lot of hold requests
 - [ ] Test data architecture (how many request context can be held, how does envoy scale the HTTP contexts)?
-- [ ] Make it work with Envoy Gateway-API integration
+- [x] Make it work with Envoy Gateway-API integration
 - [x] Make it work on K8s, get the scaled-to-zero status from K8s
 - [x] Poke the control-plane to actually scale on requests when scaled to zero
 
