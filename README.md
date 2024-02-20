@@ -5,7 +5,18 @@ Note: The control-plane does not really check if the backend is scaled, nor is t
 
 ## Architecture
 
-![overview](./docs/overview.drawio.svg)
+### In Envoy
+
+In Envoy the high-level architecture looks like this:
+
+![envoy-overview](./docs/envoy-overview.drawio.svg)
+
+### In Kubernetes
+
+In the Kubernetes example, this PoC is using [istio with Wasm Plugin](https://istio.io/latest/docs/reference/config/proxy_extensions/wasm-plugin/). 
+The networking is configured using [gateway-api](https://gateway-api.sigs.k8s.io/) resources, while the WASM plugin in Envoy takes care of buffering requests if necessary.
+
+![kubernetes-overview](./docs/kubernetes-overview.drawio.svg)
 
 **References**
 
