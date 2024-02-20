@@ -3,6 +3,12 @@
 Please note: this version has a static control-plane where service status is managed manually.
 The [kubernetes](./kubernetes) version has automatic detection of scaled-to-zero services.
 
+## Architecture
+
+In Envoy the high-level architecture looks like this:
+
+![envoy-overview](./docs/envoy-overview.drawio.svg)
+
 ## Demo
 
 <a href="https://asciinema.org/a/640583?autoplay=1" target="_blank"><img src="https://asciinema.org/a/640583.svg" /></a>

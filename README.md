@@ -7,9 +7,7 @@ Note: The control-plane does not really check if the backend is scaled, nor is t
 
 ### In Envoy
 
-In Envoy the high-level architecture looks like this:
-
-![envoy-overview](./docs/envoy-overview.drawio.svg)
+See [envoy](./ENVOY.md#architecture)
 
 ### In Kubernetes
 
