@@ -4,6 +4,13 @@ bootstrap_extensions:
       "@type": type.googleapis.com/envoy.extensions.wasm.v3.WasmService
       singleton: true
       config:
+        configuration:
+          "@type": type.googleapis.com/google.protobuf.StringValue
+          value: |
+            {
+                "control-plane-url": "control-plane",
+                "control-plane-cluster": "control-plane"
+            }
         vm_config:
           vm_id: "request-buffer"
           runtime: "envoy.wasm.runtime.v8"
@@ -53,6 +60,13 @@ static_resources:
                     type_url: type.googleapis.com/envoy.extensions.filters.http.wasm.v3.Wasm
                     value:
                       config:
+                        configuration:
+                          "@type": type.googleapis.com/google.protobuf.StringValue
+                          value: |
+                            {
+                                "control-plane-url": "control-plane",
+                                "control-plane-cluster": "control-plane"
+                            }
                         vm_config:
                           vm_id: "request-buffer"
                           runtime: "envoy.wasm.runtime.v8"

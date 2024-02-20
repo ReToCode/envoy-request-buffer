@@ -78,12 +78,9 @@ func (ctx *servicePluginContext) OnTick() {
 		{"accept", "*/*"},
 	}
 
-	// TODO: 7001 is hardcoded for now, make it configurable
-	// outbound|7001||control-plane.default.svc.cluster.local
-	clusterName := "outbound|7001||" + ctx.config.ControlPlaneURL
-	proxywasm.LogInfof("calling out to %s with headers: %v", clusterName, headers)
+	proxywasm.LogInfof("calling out to %s with headers: %v", ctx.config.ControlPlaneCluster, headers)
 
-	if _, err := proxywasm.DispatchHttpCall(clusterName, headers, nil, nil,
+	if _, err := proxywasm.DispatchHttpCall(ctx.config.ControlPlaneCluster, headers, nil, nil,
 		5000, ctx.controlPlaneResponseCallback); err != nil {
 		proxywasm.LogCriticalf("dispatch httpcall failed: %v", err)
 	}

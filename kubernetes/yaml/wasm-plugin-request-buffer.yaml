@@ -15,6 +15,7 @@ spec:
   phase: UNSPECIFIED_PHASE
   pluginConfig:
     control-plane-url: control-plane.default.svc.cluster.local
+    control-plane-cluster: outbound|7001||control-plane.default.svc.cluster.local
 ---
 apiVersion: extensions.istio.io/v1alpha1
 kind: WasmPlugin
@@ -31,3 +32,4 @@ spec:
   phase: UNSPECIFIED_PHASE
   pluginConfig:
     control-plane-url: control-plane.default.svc.cluster.local
+    control-plane-cluster: outbound|7001||control-plane.default.svc.cluster.local

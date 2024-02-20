@@ -16,7 +16,8 @@ type RequestContext struct {
 }
 
 type PluginConfig struct {
-	ControlPlaneURL string `json:"control-plane-url"`
+	ControlPlaneURL     string `json:"control-plane-url"`
+	ControlPlaneCluster string `json:"control-plane-cluster"`
 }
 
 // Note:
