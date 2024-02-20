@@ -52,4 +52,4 @@ For more info about the demo see the scripts in [demo](./kubernetes/demo)
 * The API of the SDK is a bit peculiar
 * Error reporting is quite limited (e.g. when a httpContextID is no longer available, a generic `bad argument` error is returned)
 * Another option might be to consider using Rust for the module, [as Kuadrant dit](https://github.com/Kuadrant/wasm-shim) 
-* Istio does not yet support `kind: WASMModule` for singletons (WASMServices)
+* Istio does not yet support `kind: WASMModule` for singletons (WASMServices) --> https://github.com/istio/istio/issues/49451
